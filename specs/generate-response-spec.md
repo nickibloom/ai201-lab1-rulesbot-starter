@@ -42,7 +42,20 @@ Returns a fallback string (not an error) when `retrieved_chunks` is empty.
 *How will you format the retrieved chunks before passing them to the LLM? Describe the structure — not the code. Consider: will you label chunks by game? Include distance scores? Separate chunks with delimiters?*
 
 ```
-[your answer here]
+The retrieved chunks will be formatted as a cleanly structured, continuous string using clear structural headers and Markdown delimiters. 
+
+Each chunk will be wrapped in an explicit "Source Block" that clearly labels the originating game name. Individual chunks will be separated by triple dashes (---) to act as a hard visual delimiter for the LLM. 
+
+Distance scores will not be included because it adds unneccesasary noise for the LLM and may confuse it.
+
+Structure:
+---
+SOURCE GAME: [Game Name]
+RULE CONTENT: [Actual text of the chunk]
+---
+SOURCE GAME: [Game Name]
+...
+
 ```
 
 ---
@@ -52,7 +65,8 @@ Returns a fallback string (not an error) when `retrieved_chunks` is empty.
 *Write the exact system prompt instruction you will use to prevent the model from answering beyond the retrieved text. This is the most important design decision in this function.*
 
 ```
-[your answer here]
+You are an expert board game rules assistant. Your sole task is to answer the user's question using ONLY the provided game rule chunks above. Rely ONLY on the clear facts directly mentioned in the context. Do not assume, extrapolate, or bring in outside knowledge about the game. Do not make any mention of "the provided chunks", "the context", or "the database" in your final response to the user. Speak naturally as a rules expert.
+
 ```
 
 ---
@@ -62,7 +76,13 @@ Returns a fallback string (not an error) when `retrieved_chunks` is empty.
 *Write the exact instruction you will use to tell the model to identify which game its answer comes from.*
 
 ```
-[your answer here]
+When answering the user's question, you must explicitly state which game the rules are from. 
+
+Strict Rules for Citations:
+1. Every time you state a rule, mention the specific game it applies to (e.g., "In Monopoly, you receive...").
+2. If the user asks a general question and the answer contains rules from multiple different games, clearly separate your response into sections or bullet points labeled by the game name.
+3. Use the exact game name provided in the "SOURCE GAME" label of the context. Do not shorten or alter the game names.
+
 ```
 
 ---
@@ -72,7 +92,8 @@ Returns a fallback string (not an error) when `retrieved_chunks` is empty.
 *What should the response say when the answer isn't found in the loaded rule books? Write the exact fallback message.*
 
 ```
-[your answer here]
+If the context does not contain the answer to the question, respond exactly with: "I'm sorry, but I couldn't find the answer to that in the provided rulebooks."
+
 ```
 
 ---
@@ -82,7 +103,12 @@ Returns a fallback string (not an error) when `retrieved_chunks` is empty.
 *`retrieved_chunks` may include chunks with high distance scores (weak relevance). Will you filter these out before building context, pass them all in, or handle them another way? What are the tradeoffs?*
 
 ```
-[your answer here]
+We will handle low-relevance chunks by applying a hard distance threshold filter before building the context for the LLM. If a retrieved chunk has a distance score higher than 0.7, it will be discarded entirely. If all retrieved chunks exceed this threshold, the function will bypass the LLM completely and immediately return the fallback "I don't know" message.
+
+Tradeoffs of this approach:
+- Pros: It saves money (fewer tokens sent to the LLM), increases security against hallucinations (the LLM never sees irrelevant text that it might try to force into an answer), and speeds up response times.
+- Cons: If the distance threshold is tuned too aggressively (e.g., set too low), we risk filtering out a highly specific or awkwardly phrased rule chunk that actually contained the correct answer.
+
 ```
 
 ---
@@ -92,7 +118,17 @@ Returns a fallback string (not an error) when `retrieved_chunks` is empty.
 *Describe how you will structure the messages list for the API call — what goes in the system message vs. the user message?*
 
 ```
-[your answer here]
+The messages list for the OpenAI API call will be structured as a two-part list containing a single System Message followed by a single User Message. 
+
+1. System Message: This will contain the primary behavioral persona (Expert Board Game Assistant), the strict grounding instructions (rely only on the provided text, fallback message if unknown), and the citation rules (explicitly state the game name). 
+2. User Message: This will contain the dynamically injected, formatted context block (the filtered rule chunks and game names) immediately followed by the user's specific query.
+
+Structure:
+messages = [
+    {"role": "system", "content": "[System Persona + Grounding Rules + Citation Rules]"},
+    {"role": "user", "content": "[Formatted Rule Chunks as Context] \n\n User Question: [User's Query]"}
+]
+
 ```
 
 ---
@@ -104,14 +140,17 @@ Returns a fallback string (not an error) when `retrieved_chunks` is empty.
 **Test query and response:**
 
 ```
-Query: [your test query]
-Response: [abbreviated response]
-Correctly grounded? [yes / no]
-Cited the right game? [yes / no]
+Query: "Give me an overview of the game Clue."
+Response: In Clue, it is a deduction game for 2–6 players where a murder has been committed in a mansion . . . can name the correct suspect.
+Correctly grounded? Yes
+Cited the right game? Yes
 ```
 
 **One thing you changed from your original spec after seeing the actual output:**
 
 ```
-[your answer here]
+While our system prompt instructions remained identical to our initial plan, seeing the raw text output made us explicitly hardcode `temperature=0.0` into the `_client.chat.completions.create()` API call. 
+
+Originally, we didn't emphasize temperature settings in our architectural spec. However, during runtime, we realized that allowing any default LLM creativity (higher temperature) could lead to subtle rule mutations or cross-contamination when managing text chunks from multiple board games simultaneously. Setting it to 0.0 forces the model to treat our grounding and citation rules as deterministic laws.
+
 ```

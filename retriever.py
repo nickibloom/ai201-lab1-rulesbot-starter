@@ -68,5 +68,28 @@ def retrieve(query, n_results=N_RESULTS):
     if _collection.count() == 0:
         return []
 
-    # Your implementation here.
-    return []
+    results = _collection.query(
+        query_texts=[query],
+        n_results=n_results,
+        include=["documents", "metadatas", "distances"]
+    )
+
+    # reformat the nested lists into a clean list of dictionaries
+    formatted_results = []
+    
+    # grab index [0] because we only sent in one query string
+    
+    for i in range(len(results["documents"][0])):
+        formatted_results.append({
+            "text": results["documents"][0][i],
+            "game": results["metadatas"][0][i]["game"],  # Note: fixed a tiny typo here too!
+            "distance": results["distances"][0][i]
+        })
+
+
+    # for chunk in formatted_results:
+    #     print(f"[{chunk['game']}] (dist: {chunk['distance']:.3f}) {chunk['text'][:80]}...")
+
+    return formatted_results
+
+# retrieve("How do you get out of jail in Monopoly?")
